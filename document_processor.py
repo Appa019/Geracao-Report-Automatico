@@ -50,10 +50,19 @@ class DocumentProcessor:
                 page = doc[page_num]
                 text = page.get_text()
                 
-                # Detectar imagens e tabelas
+                # Detectar imagens
                 if page.get_images():
                     metadata['has_images'] = True
-                if page.get_tables():
+                
+                # Detectar possíveis tabelas (busca por padrões de texto estruturado)
+                lines = text.split('\n')
+                table_indicators = 0
+                for line in lines:
+                    # Contar linhas com múltiplos espaços ou tabs (indicativo de tabelas)
+                    if '\t' in line or '  ' in line.strip():
+                        table_indicators += 1
+                
+                if table_indicators > 3:  # Se há muitas linhas estruturadas
                     metadata['has_tables'] = True
                 
                 text_content.append({
