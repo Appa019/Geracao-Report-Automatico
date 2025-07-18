@@ -1,0 +1,11 @@
+streamlit>=1.28.0
+openai
+PyPDF2
+python-docx
+python-pptx
+PyMuPDF
+openpyxl
+pandas
+scikit-learn
+numpy
+pathlib2
