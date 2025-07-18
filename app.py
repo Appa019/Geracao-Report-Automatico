@@ -3,10 +3,22 @@ import os
 from pathlib import Path
 import tempfile
 import zipfile
-from document_processor import DocumentProcessor
-from ai_analyzer import AIAnalyzer
-from excel_generator import ExcelGenerator
-from chatbot import DocumentChatbot
+import sys
+
+# Configuração de imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+try:
+    from document_processor import DocumentProcessor
+    from ai_analyzer import AIAnalyzer
+    from excel_generator import ExcelGenerator
+    from chatbot import DocumentChatbot
+except ImportError as e:
+    st.error(f"Erro de importação: {e}")
+    st.stop()
+
 import pandas as pd
 
 # Configuração da página
@@ -83,10 +95,14 @@ def main():
         st.info("👈 Configure sua API Key na barra lateral para começar.")
         return
     
-    if mode == "📄 Análise de Documento":
-        document_analysis_mode()
-    else:
-        chatbot_mode()
+    try:
+        if mode == "📄 Análise de Documento":
+            document_analysis_mode()
+        else:
+            chatbot_mode()
+    except Exception as e:
+        st.error(f"❌ Erro na aplicação: {str(e)}")
+        st.error("Por favor, verifique sua API Key e tente novamente.")
 
 def document_analysis_mode():
     """Modo de análise de documentos"""
@@ -110,99 +126,57 @@ def document_analysis_mode():
             file_type = uploaded_file.name.split('.')[-1].upper()
             st.metric("📝 Tipo", file_type)
         
-        # Resetar estado se arquivo mudou
-        if 'current_file' not in st.session_state or st.session_state.current_file != uploaded_file.name:
-            st.session_state.current_file = uploaded_file.name
-            st.session_state.processing_state = 'initial'
-            st.session_state.document_analysis = None
-            st.session_state.text_content = None
-        
         # Processo de análise
-        if st.session_state.get('processing_state', 'initial') == 'initial':
-            if st.button("🔍 Analisar Documento", type="primary"):
-                process_document(uploaded_file)
-        else:
-            # Mostrar análise já processada
+        if st.button("🔍 Analisar Documento", type="primary"):
             process_document(uploaded_file)
 
 def process_document(uploaded_file):
     """Processa o documento carregado"""
-    
-    # Usar session state para manter o estado do processamento
-    if 'processing_state' not in st.session_state:
-        st.session_state.processing_state = 'initial'
-    
-    if 'document_analysis' not in st.session_state:
-        st.session_state.document_analysis = None
-    
-    if 'text_content' not in st.session_state:
-        st.session_state.text_content = None
-    
-    # Etapa inicial: processar documento
-    if st.session_state.processing_state == 'initial':
-        with st.spinner("🔄 Processando documento..."):
-            
-            # Salvar arquivo temporário
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_path = tmp_file.name
-            
-            try:
-                # Inicializar processadores
-                processor = DocumentProcessor()
-                analyzer = AIAnalyzer()
-                
-                # Etapa 1: Extrair texto
-                st.info("📖 Extraindo texto do documento...")
-                text_content = processor.extract_text(tmp_path)
-                st.session_state.text_content = text_content
-                
-                # Etapa 2: Análise inicial
-                st.info("🧠 Analisando conteúdo com IA...")
-                document_analysis = analyzer.analyze_document_structure(text_content, uploaded_file.name)
-                st.session_state.document_analysis = document_analysis
-                
-                # Mudar estado
-                st.session_state.processing_state = 'analyzed'
-                
-            except Exception as e:
-                st.error(f"❌ Erro ao processar documento: {str(e)}")
-                return
-            finally:
-                # Limpar arquivo temporário
-                if 'tmp_path' in locals():
-                    os.unlink(tmp_path)
-            
-            # Recarregar página para mostrar análise
-            st.rerun()
-    
-    # Mostrar análise e opções
-    if st.session_state.processing_state == 'analyzed' and st.session_state.document_analysis:
-        # Mostrar análise inicial
-        st.markdown("### 📋 Análise Inicial")
-        display_document_analysis(st.session_state.document_analysis)
+    with st.spinner("🔄 Processando documento..."):
         
-        # Etapa 3: Opções de análise
-        st.markdown("### 🎯 Escolha o tipo de análise")
-        analysis_options = st.session_state.document_analysis.get('suggested_analyses', [])
+        # Salvar arquivo temporário
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_path = tmp_file.name
         
-        if analysis_options:
-            # Usar um form para evitar reprocessamento
-            with st.form("analysis_form"):
+        try:
+            # Inicializar processadores
+            processor = DocumentProcessor()
+            analyzer = AIAnalyzer()
+            excel_gen = ExcelGenerator()
+            
+            # Etapa 1: Extrair texto
+            st.info("📖 Extraindo texto do documento...")
+            text_content = processor.extract_text(tmp_path)
+            
+            # Etapa 2: Análise inicial
+            st.info("🧠 Analisando conteúdo com IA...")
+            document_analysis = analyzer.analyze_document_structure(text_content, uploaded_file.name)
+            
+            # Mostrar análise inicial
+            st.markdown("### 📋 Análise Inicial")
+            display_document_analysis(document_analysis)
+            
+            # Etapa 3: Opções de análise
+            st.markdown("### 🎯 Escolha o tipo de análise")
+            analysis_options = document_analysis.get('suggested_analyses', [])
+            
+            if analysis_options:
                 selected_analysis = st.selectbox(
                     "Selecione a análise desejada:",
                     analysis_options,
                     format_func=lambda x: f"🔍 {x}"
                 )
                 
-                submitted = st.form_submit_button("📊 Executar Análise Detalhada", type="primary")
-                
-                if submitted:
-                    perform_detailed_analysis(
-                        st.session_state.text_content, 
-                        selected_analysis, 
-                        uploaded_file.name
-                    )
+                if st.button("📊 Executar Análise Detalhada"):
+                    perform_detailed_analysis(text_content, selected_analysis, analyzer, excel_gen, uploaded_file.name)
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao processar documento: {str(e)}")
+        finally:
+            # Limpar arquivo temporário
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 def display_document_analysis(analysis):
     """Exibe a análise inicial do documento"""
@@ -215,7 +189,7 @@ def display_document_analysis(analysis):
         st.markdown("#### 📊 Estrutura")
         structure = analysis.get('structure', {})
         st.write(f"**Páginas estimadas:** {structure.get('estimated_pages', 'N/A')}")
-        st.write(f"**Seções principais:** {len(structure.get('main_sections', []))}")
+        st.write(f"**Seções principais:** {structure.get('main_sections', 'N/A')}")
     
     with col2:
         st.markdown("#### 🎯 Análises Sugeridas")
